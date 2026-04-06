@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Air Quality</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --aqi-color: #00e676;
+    --aqi-glow: rgba(0, 230, 118, 0.3);
+    --aqi-dim: rgba(0, 230, 118, 0.08);
+    --bg: #060a0f;
+    --text: #e8f4f8;
+    --muted: rgba(232, 244, 248, 0.4);
+    --card: rgba(0,0,0,0.45);
+    --border: rgba(255,255,255,0.07);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow: hidden;
+    cursor: none;
+  }
+
+  /* Photo horizon — fades to transparent at top, full opacity at bottom */
+  .horizon-photo {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background-image: url('horizon.jpg');
+    background-size: cover;
+    background-position: center 55%;
+    -webkit-mask-image: linear-gradient(to top,
+      rgba(0,0,0,0.92) 0%,
+      rgba(0,0,0,0.75) 20%,
+      rgba(0,0,0,0.3)  50%,
+      rgba(0,0,0,0)    72%
+    );
+    mask-image: linear-gradient(to top,
+      rgba(0,0,0,0.92) 0%,
+      rgba(0,0,0,0.75) 20%,
+      rgba(0,0,0,0.3)  50%,
+      rgba(0,0,0,0)    72%
+    );
+  }
+
+  /* Atmospheric glow */
+  .atmosphere {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .atmosphere::before {
+    content: '';
+    position: absolute;
+    top: -20%; left: -10%;
+    width: 60%; height: 60%;
+    background: radial-gradient(ellipse, var(--aqi-glow) 0%, transparent 70%);
+    transition: background 2s ease;
+    animation: breathe 8s ease-in-out infinite;
+  }
+  .atmosphere::after {
+    content: '';
+    position: absolute;
+    bottom: -10%; right: -10%;
+    width: 50%; height: 50%;
+    background: radial-gradient(ellipse, var(--aqi-dim) 0%, transparent 70%);
+    transition: background 2s ease;
+    animation: breathe 8s ease-in-out infinite reverse;
+  }
+  @keyframes breathe {
+    0%, 100% { transform: scale(1); opacity: 0.7; }
+    50% { transform: scale(1.15); opacity: 1; }
+  }
+
+  canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    opacity: 0.4;
+  }
+
+  .dashboard {
+    position: relative;
+    z-index: 3;
+    height: 100vh;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    padding: 2.5rem 3rem;
+    gap: 1.5rem;
+  }
+
+  .header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .header-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.1rem;
+    letter-spacing: 0.25em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .header-time {
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+  }
+
+  .main {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .level-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(3rem, 10vw, 6rem);
+    line-height: 0.9;
+    color: var(--aqi-color);
+    text-shadow: 0 0 60px var(--aqi-glow);
+    transition: color 2s ease, text-shadow 2s ease;
+    letter-spacing: 0.02em;
+  }
+  .pm25-display {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .pm25-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(5rem, 20vw, 12rem);
+    line-height: 0.85;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+  .pm25-unit {
+    font-size: 1rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    align-self: flex-end;
+    margin-bottom: 1rem;
+  }
+
+  .scale-bar { width: 100%; margin-top: 1rem; }
+  .scale-track {
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right,
+      #00e676 0%, #ffee58 20%, #ff9800 35%,
+      #f44336 50%, #9c27b0 70%, #7b1a1a 100%
+    );
+    position: relative;
+  }
+  .scale-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px; height: 14px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 0 12px var(--aqi-color), 0 0 4px white;
+    transition: left 1.5s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 2s ease;
+  }
+  .scale-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.6rem;
+  }
+  .scale-labels span {
+    font-size: 0.55rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+  }
+  .metric {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: border-color 2s ease;
+  }
+  .metric:first-child {
+    border-left: 2px solid var(--aqi-color);
+    transition: border-color 2s ease, border-left-color 2s ease;
+  }
+  .metric-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .metric-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem;
+    line-height: 1;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+  .metric-sub {
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--aqi-color);
+    border-radius: 50%;
+    margin-right: 0.4rem;
+    box-shadow: 0 0 6px var(--aqi-color);
+    animation: pulse 2s ease-in-out infinite;
+    transition: background 2s ease, box-shadow 2s ease;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  .fullscreen-btn {
+    position: fixed;
+    bottom: 1.2rem; right: 1.2rem;
+    z-index: 100;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    padding: 0.5rem 0.8rem;
+    cursor: pointer;
+    transition: opacity 0.3s ease;
+    opacity: 0.5;
+  }
+  .fullscreen-btn:hover, .fullscreen-btn:active { opacity: 1; }
+  .fullscreen-btn.hidden { opacity: 0; pointer-events: none; }
+
+  /* Login screen */
+  .login-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(6, 10, 15, 0.97);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+  }
+  .login-screen.hidden { display: none; }
+  .login-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem;
+    letter-spacing: 0.2em;
+    color: var(--aqi-color);
+    text-shadow: 0 0 40px var(--aqi-glow);
+  }
+  .login-subtitle {
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    margin-top: -1rem;
+  }
+  .login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    width: 280px;
+  }
+  .login-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .login-field label {
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .login-field input {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    padding: 0.6rem 0.8rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .login-field input:focus {
+    border-color: var(--aqi-color);
+  }
+  .login-btn {
+    margin-top: 0.4rem;
+    background: var(--aqi-color);
+    border: none;
+    border-radius: 8px;
+    color: #060a0f;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.1rem;
+    letter-spacing: 0.15em;
+    padding: 0.7rem;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .login-btn:hover { opacity: 0.85; }
+  .login-error {
+    font-size: 0.65rem;
+    color: #f44336;
+    letter-spacing: 0.05em;
+    text-align: center;
+    min-height: 1em;
+  }
+  .login-reset {
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    text-decoration: underline;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <div class="login-title">Air Quality Monitor</div>
+  <div class="login-subtitle">Enter your Adafruit IO credentials</div>
+  <div class="login-form">
+    <div class="login-field">
+      <label>Adafruit IO Username</label>
+      <input type="text" id="loginUser" placeholder="your_username" autocomplete="off" autocapitalize="none"/>
+    </div>
+    <div class="login-field">
+      <label>Adafruit IO Key</label>
+      <input type="password" id="loginKey" placeholder="aio_xxxxxxxxxxxx" autocomplete="off" autocapitalize="none"/>
+    </div>
+    <div class="login-error" id="loginError"></div>
+    <button class="login-btn" onclick="doLogin()">Connect</button>
+  </div>
+  <button class="login-reset" onclick="resetCredentials()">clear saved credentials</button>
+</div>
+
+<div class="horizon-photo"></div>
+<div class="atmosphere"></div>
+<canvas id="particles"></canvas>
+<button class="fullscreen-btn" id="fsBtn" onclick="toggleFullscreen()">⛶ FULLSCREEN</button>
+
+<div class="dashboard">
+
+  <div class="header">
+    <div class="header-title">
+      <span class="status-dot"></span>
+      Air Quality Monitor
+    </div>
+    <div class="header-time" id="clockDisplay">--:-- --</div>
+  </div>
+
+  <div class="main">
+    <div class="level-label" id="levelLabel">––––</div>
+    <div class="pm25-display">
+      <div class="pm25-value" id="pm25Value">–.–</div>
+      <div class="pm25-unit">μg/m³<br>PM2.5</div>
+    </div>
+    <div class="scale-bar">
+      <div class="scale-track">
+        <div class="scale-marker" id="scaleMarker" style="left:0%"></div>
+      </div>
+      <div class="scale-labels">
+        <span>Good</span>
+        <span>Moderate</span>
+        <span>Sensitive</span>
+        <span>Unhealthy</span>
+        <span>Very</span>
+        <span>Hazardous</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-label">Temperature</div>
+      <div class="metric-value" id="tempValue">–.–</div>
+      <div class="metric-sub">°F</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Humidity</div>
+      <div class="metric-value" id="humValue">–.–</div>
+      <div class="metric-sub">% RH</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">PM10</div>
+      <div class="metric-value" id="pm10Value">–.–</div>
+      <div class="metric-sub">μg/m³</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">PM100</div>
+      <div class="metric-value" id="pm100Value">–.–</div>
+      <div class="metric-sub">μg/m³</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const REFRESH_INTERVAL = 60000;
+let AIO_KEY  = '';
+let AIO_USER = '';
+
+// Login / credential management
+function doLogin() {
+  const user = document.getElementById('loginUser').value.trim();
+  const key  = document.getElementById('loginKey').value.trim();
+  if (!user || !key) {
+    document.getElementById('loginError').textContent = 'Both fields are required.';
+    return;
+  }
+  AIO_USER = user;
+  AIO_KEY  = key;
+  localStorage.setItem('aio_user', user);
+  localStorage.setItem('aio_key', key);
+  document.getElementById('loginScreen').classList.add('hidden');
+  startDashboard();
+}
+
+function resetCredentials() {
+  localStorage.removeItem('aio_user');
+  localStorage.removeItem('aio_key');
+  document.getElementById('loginUser').value = '';
+  document.getElementById('loginKey').value  = '';
+  document.getElementById('loginError').textContent = '';
+  document.getElementById('loginScreen').classList.remove('hidden');
+}
+
+// Allow Enter key to submit login
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !document.getElementById('loginScreen').classList.contains('hidden')) {
+    doLogin();
+  }
+});
+
+// Check for saved credentials on load
+window.addEventListener('load', () => {
+  const user = localStorage.getItem('aio_user');
+  const key  = localStorage.getItem('aio_key');
+  if (user && key) {
+    AIO_USER = user;
+    AIO_KEY  = key;
+    document.getElementById('loginScreen').classList.add('hidden');
+    startDashboard();
+  }
+});
+
+function startDashboard() {
+  resizeCanvas(); initParticles(); animateParticles();
+  updateClock();
+  setInterval(updateClock, 1000);
+  refresh();
+  setInterval(refresh, REFRESH_INTERVAL);
+}
+
+const EPA_LEVELS = [
+  { label: 'Good',                    upper: 12.0,  color: '#00e676', glow: 'rgba(0,230,118,0.3)',  dim: 'rgba(0,230,118,0.08)',  pct: 8  },
+  { label: 'Moderate',                upper: 35.0,  color: '#ffee58', glow: 'rgba(255,238,88,0.3)', dim: 'rgba(255,238,88,0.08)', pct: 26 },
+  { label: 'Unhealthy for Sensitive', upper: 55.0,  color: '#ff9800', glow: 'rgba(255,152,0,0.3)',  dim: 'rgba(255,152,0,0.08)',  pct: 40 },
+  { label: 'Unhealthy',               upper: 150.0, color: '#f44336', glow: 'rgba(244,67,54,0.3)',  dim: 'rgba(244,67,54,0.08)',  pct: 55 },
+  { label: 'Very Unhealthy',          upper: 250.0, color: '#9c27b0', glow: 'rgba(156,39,176,0.3)', dim: 'rgba(156,39,176,0.08)', pct: 75 },
+  { label: 'Hazardous',               upper: 9999,  color: '#c62828', glow: 'rgba(198,40,40,0.3)',  dim: 'rgba(198,40,40,0.08)',  pct: 93 },
+];
+
+function findLevel(pm25) {
+  for (const lvl of EPA_LEVELS) { if (pm25 < lvl.upper) return lvl; }
+  return EPA_LEVELS[EPA_LEVELS.length - 1];
+}
+
+function applyLevel(level) {
+  const r = document.documentElement;
+  r.style.setProperty('--aqi-color', level.color);
+  r.style.setProperty('--aqi-glow', level.glow);
+  r.style.setProperty('--aqi-dim', level.dim);
+  document.getElementById('scaleMarker').style.left = level.pct + '%';
+  document.getElementById('scaleMarker').style.boxShadow = `0 0 12px ${level.color}, 0 0 4px white`;
+}
+
+async function fetchFeed(feed) {
+  const r = await fetch(`https://io.adafruit.com/api/v2/${AIO_USER}/feeds/${feed}/data/last`, {
+    headers: { 'X-AIO-Key': AIO_KEY }
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return parseFloat((await r.json()).value);
+}
+
+async function refresh() {
+  try {
+    const [pm25, pm10, pm100, temp, hum] = await Promise.all([
+      fetchFeed('aqi.pm25'), fetchFeed('aqi.pm10'), fetchFeed('aqi.pm100'),
+      fetchFeed('aqi.temp'), fetchFeed('aqi.humidity'),
+    ]);
+    const level = findLevel(pm25);
+    document.getElementById('pm25Value').textContent  = pm25.toFixed(1);
+    document.getElementById('pm10Value').textContent  = pm10.toFixed(1);
+    document.getElementById('pm100Value').textContent = pm100.toFixed(1);
+    document.getElementById('tempValue').textContent  = temp.toFixed(1);
+    document.getElementById('humValue').textContent   = hum.toFixed(1);
+    document.getElementById('levelLabel').textContent = level.label;
+    applyLevel(level);
+  } catch(e) { console.error('Fetch error:', e); }
+}
+
+function updateClock() {
+  const now = new Date();
+  let h = now.getHours();
+  const m = String(now.getMinutes()).padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  document.getElementById('clockDisplay').textContent = `${h}:${m} ${ampm}`;
+}
+
+const canvas = document.getElementById('particles');
+const ctx = canvas.getContext('2d');
+let particles = [];
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < 60; i++) {
+    particles.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.5 + 0.3,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3 - 0.1,
+      alpha: Math.random() * 0.5 + 0.1,
+    });
+  }
+}
+function animateParticles() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const color = getComputedStyle(document.documentElement).getPropertyValue('--aqi-color').trim();
+  for (const p of particles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = color + Math.round(p.alpha * 255).toString(16).padStart(2, '0');
+    ctx.fill();
+    p.x += p.vx; p.y += p.vy;
+    if (p.y < -5) p.y = canvas.height + 5;
+    if (p.x < -5) p.x = canvas.width + 5;
+    if (p.x > canvas.width + 5) p.x = -5;
+  }
+  requestAnimationFrame(animateParticles);
+}
+
+function toggleFullscreen() {
+  const el = document.documentElement;
+  if (!document.fullscreenElement) {
+    (el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen).call(el);
+    document.getElementById('fsBtn').classList.add('hidden');
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen).call(document);
+  }
+}
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) document.getElementById('fsBtn').classList.remove('hidden');
+});
+document.addEventListener('webkitfullscreenchange', () => {
+  if (!document.webkitFullscreenElement) document.getElementById('fsBtn').classList.remove('hidden');
+});
+
+window.addEventListener('resize', () => { resizeCanvas(); initParticles(); });
+</script>
+</body>
+</html>
