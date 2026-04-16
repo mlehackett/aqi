@@ -64,7 +64,16 @@ requests = adafruit_requests.Session(pool, ssl_context)
 io = IO_HTTP(aio_username, aio_key, requests)
 
 # Get or create feeds
-try: 
+def open_feeds():
+    global aqi_group
+    global log_feed
+    global pm25_feed
+    global pm10_feed
+    global pm100_feed
+    global temp_feed
+    global humidity_feed
+    global level_feed
+    global details_feed
     aqi_group = io.get_group("aqi")
     log_feed = io.get_feed("aqi.log")
     pm25_feed = io.get_feed("aqi.pm25")
@@ -74,29 +83,25 @@ try:
     humidity_feed = io.get_feed("aqi.humidity")
     level_feed = io.get_feed("aqi.level")
     details_feed = io.get_feed("aqi.details")
-except:
-    aqi_group = io.create_new_group("aqi", "data for air quality monitoring")
-    
-    # Create the feeds in the group
-    print("Creating feeds inside group...")
-    io.create_feed_in_group(aqi_group["key"], "log")
-    io.create_feed_in_group(aqi_group["key"], "pm25")
-    io.create_feed_in_group(aqi_group["key"], "pm10")
-    io.create_feed_in_group(aqi_group["key"], "pm100")
-    io.create_feed_in_group(aqi_group["key"], "temp")
-    io.create_feed_in_group(aqi_group["key"], "humidity")
-    io.create_feed_in_group(aqi_group["key"], "level")
-    io.create_feed_in_group(aqi_group["key"], "details")
-    
-    aqi_group = io.get_group("aqi")
-    log_feed = io.get_feed("aqi.log")
-    pm25_feed = io.get_feed("aqi.pm25")
-    pm10_feed = io.get_feed("aqi.pm10")
-    pm100_feed = io.get_feed("aqi.pm100")
-    temp_feed = io.get_feed("aqi.temp")
-    humidity_feed = io.get_feed("aqi.humidity")
-    level_feed = io.get_feed("aqi.level")
-    details_feed = io.get_feed("aqi.details")
+
+def open_or_create_feeds():
+    try: 
+        open_feeds()
+    except:
+        aqi_group = io.create_new_group("aqi", "data for air quality monitoring")
+        
+        # Create the feeds in the group
+        print("Creating feeds inside group...")
+        io.create_feed_in_group(aqi_group["key"], "log")
+        io.create_feed_in_group(aqi_group["key"], "pm25")
+        io.create_feed_in_group(aqi_group["key"], "pm10")
+        io.create_feed_in_group(aqi_group["key"], "pm100")
+        io.create_feed_in_group(aqi_group["key"], "temp")
+        io.create_feed_in_group(aqi_group["key"], "humidity")
+        io.create_feed_in_group(aqi_group["key"], "level")
+        io.create_feed_in_group(aqi_group["key"], "details")
+        
+        open_feeds()
 
 # Logging or posting functions
 def send_to_log(message, feed):
@@ -201,6 +206,18 @@ def find_epa_level(pm25):
 
 # Set up the hardware
 pixels = neopixel.NeoPixel(board.D15, 8, brightness=0.4)
+
+# Set up io
+try:
+    open_or_create_feeds()
+except:  # wifi or AIO failure
+    while True:
+        pixels[NETWORK_PIXEL] = red
+        time.sleep(0.5)
+        pixels[NETWORK_PIXEL] = off
+        time.sleep(0.5)
+
+
 
 reset_pin = None
 
